@@ -69,3 +69,32 @@ declare) fails to override. Install MacKernelSDK and use the project's own setti
 
 `EFI/OC/Kexts/itlwm-Tahoe.kext` — patched build, md5 `789e72e134561f15c634f28421c85165`.
 Stock preserved alongside as `itlwm-Tahoe.kext.STOCK`, md5 `06a1b3b339e5e5335253b5d5df96f5a0`.
+
+## Prebuilt kext
+
+`itlwm-2.4.0-vhtclamp.kext.zip` — itlwm with the VHT clamp applied.
+
+```
+source      OpenIntelWireless/itlwm @ 53c51c2 (2.4.0)
+patch       0001-vht-clamp-negotiated-width-to-own-capability.patch (in this folder)
+built with  Xcode 26.6, ARCHS=x86_64, Release, unsigned
+binary      sha256 bfe99329f30794e64bb26b8d192b6ae17ba3ea9949134dc8d9da880c87815190
+zip         sha256 59c8c434ddb937b3999a83ded6c23077f41b95448f01796d668b06a09b179bbd
+```
+
+**itlwm is GPLv2** (`LICENSE-itlwm-GPLv2`). The complete corresponding source is the
+upstream commit above plus the patch in this folder — clone, apply, and you get this
+binary. Building it yourself is straightforward and is the better option if you'd
+rather not run a kext you didn't compile:
+
+```bash
+git clone --depth 1 https://github.com/OpenIntelWireless/itlwm.git && cd itlwm
+git checkout 53c51c2
+git apply ../0001-vht-clamp-negotiated-width-to-own-capability.patch
+git clone --depth 1 https://github.com/acidanthera/MacKernelSDK.git   # required, NOT a submodule
+xcodebuild -project itlwm.xcodeproj -scheme itlwm -configuration Release \
+  ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+  -derivedDataPath ./DerivedData build
+```
+
+If the patch lands upstream, prefer an official release over this build.

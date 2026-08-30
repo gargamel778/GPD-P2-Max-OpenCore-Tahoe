@@ -44,7 +44,7 @@ replaces it must be gated identically.**
 |---|---|
 | `ACPI/SSDT-LIDFIX.dsl` | makes the lid work — see `docs/LID-GPE50.md` |
 | `ACPI/SSDT-BATSTA.dsl` | `ECAV`-guards `BAT0._STA`; takes boot ACPI errors from 18 to **0** |
-| `itlwm-patch/` | itlwm VHT-width clamp — upstream [OpenIntelWireless/itlwm#1067](https://github.com/OpenIntelWireless/itlwm/pull/1067) |
+| `itlwm-patch/` | itlwm VHT-width clamp + **prebuilt kext** — upstream [OpenIntelWireless/itlwm#1067](https://github.com/OpenIntelWireless/itlwm/pull/1067) |
 | `picker/` | OpenCanopy assets and a macOS volume icon |
 
 **Lid** — the lid is an EC query. `_Q0C` reads `LSTE`, then calls `^^^GFX0.GLID(LIDS)`
@@ -89,6 +89,29 @@ start here.
 In `AMITSE` (GUID `B1DA0ADF-4F77-4070-A88E-BFFE1C60529A`), PE32 offset `0x32C2B`:
 `0x74` (je) → `0xEB` (jmp), making the CMOS gate unconditional.
 
+> ⚠⚠ **Patch YOUR OWN DUMP — not the vendor image.** `P2MAX029.bin` (the image
+> inside GPD's updater) is **generic**, not a dump of your machine. Flashing it
+> wholesale overwrites per-unit content.
+
+```bash
+# 1. Get the stock vendor image OFF the machine first - recovery material,
+#    useless sitting on a device that won't boot.
+
+# 2. Dump THIS machine's BIOS region - read-only, no risk:
+FPTW64.exe -d mybios.bin -BIOS
+
+# 3. Apply the AMITSE patch to *that dump* (UEFIPatch), producing mybios-unlocked.bin
+
+# 4. Flash it back:
+FPTW64.exe -f mybios-unlocked.bin -BIOS
+
+# 5. VERIFY by reading back - do not trust the success message:
+FPTW64.exe -d after.bin -BIOS
+#    md5(after.bin) must equal md5(mybios-unlocked.bin), and AMITSE 0x32C2B must read 0xEB
+```
+
+**Keep `mybios.bin`. It is your restore path:** `FPTW64.exe -f mybios.bin -BIOS`.
+
 > ⚠⚠ **Do not talk yourself into this being low-risk.** `AMITSE` is LZMA-compressed,
 > so the change requires decompress → patch → recompress → rebuild. **At image level
 > 2,582,061 bytes differ across 10,038 runs.** "Only one byte changes" is true only of
@@ -100,11 +123,17 @@ In `AMITSE` (GUID `B1DA0ADF-4F77-4070-A88E-BFFE1C60529A`), PE32 offset `0x32C2B`
 **region selector**, not a modifier; it writes only the ME region. GPD's `V029.exe` is
 AFUWINx64 with a complete 8 MiB image appended as a PE overlay, self-invoked with no
 filename, so it flashes **its own embedded image** and ignores yours. Renaming a
-patched file into that flow silently reflashes stock.
+patched file into that flow silently reflashes stock and leaves you concluding the
+analysis was wrong.
 
-No firmware images are included here — dumped BIOS images contain your unit's serial,
-UUID and MAC, and redistributing the vendor image is a separate matter. The method is
-above; produce your own.
+For reference, the successful flash here: Intel FPT 11.6.1.1142, flash device
+**GD25B64B** (`ID:0xC84017`, 8192 KB), descriptor Valid. FPT wrote **differentially** —
+2536 KB, matching the changed range — and the read-back was byte-identical to the
+intended image.
+
+No firmware images are included in this repo: a dump contains your unit's serial, UUID
+and MAC, and redistributing the vendor image is a separate matter. Produce your own
+per the steps above.
 
 ## Status
 
