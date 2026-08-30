@@ -15,6 +15,113 @@ Tahoe, plus three defects found along the way.
 > means impersonating their Mac to Apple's activation servers, which is a good way
 > to get **their** iMessage/iCloud flagged as well as your own.
 
+## What's included
+
+**OpenCore 1.0.7** (DEBUG build — console logging only, no ESP writes)
+
+| Kext | Version | | Kext | Version |
+|---|---|---|---|---|
+| Lilu | 1.7.2 | | ECEnabler | 1.0.6 |
+| VirtualSMC (+SMCProcessor, SMCSuperIO, SMCBatteryManager) | 1.3.7 | | RestrictEvents | 1.1.6 |
+| WhateverGreen | 1.7.0 | | FeatureUnlock | 1.1.8 |
+| AppleALC | 1.9.7 | | BrightnessKeys | 1.0.3 |
+| NVMeFix | 1.1.3 | | AMFIPass | 1.4.1 |
+| RTCMemoryFixup | 1.0.7 | | NullEthernet (+`SSDT-RMNE`) | 1.0.6 |
+| HibernationFixup | 1.5.4 | | VoodooI2C (+HID, Goodix, Input, GPIO) | 2.8 |
+| SystemProfilerMemoryFixup | 1.0.0 | | **itlwm-Tahoe (patched)** | **2.4.0** |
+| IntelBluetoothFirmware / Injector | **2.5.1** | | BlueToolFixup | 2.7.2 |
+
+⚠ **IntelBluetoothFirmware must be 2.5.1+** — upstream 2.4.0 hard-codes `KernelVersion::Sequoia`
+as its maximum, loads on Tahoe and deliberately does nothing. Use the
+[lshbluesky fork](https://github.com/lshbluesky/IntelBluetoothFirmware) until upstream ships one.
+
+`AirportItlwm` 2.3.0 (BigSur→Sequoia) and `IOSkywalkFamily`/`IO80211FamilyLegacy` are present but
+kernel-gated to ≤24.9.9. **They do not work on Tahoe** — AirportItlwm binds but every scan returns
+`Apple80211Scan err[22] EINVAL`. Tahoe uses `itlwm` + [HeliPort](https://github.com/OpenIntelWireless/HeliPort).
+
+**UEFI drivers:** OpenRuntime, OpenHfsPlus, ResetNvramEntry, OpenCanopy, AudioDxe
+
+**ACPI:** `SSDT-LIDFIX`, `SSDT-BATSTA`, `SSDT-UPCFIX`, `SSDT-XOSI`, `SSDT-BATT`, `SSDT-PLUG`,
+`SSDT-PNLF`, `SSDT-RMNE`, `SSDT-UIAC`, `SSDT-USBX`, `SSDT-XPRW`, `SSDT-XPTS`, `SSDT-XWAK`
+
+## What works
+
+- **Sleep / wake** — including idle sleep on battery and RTC wake
+- **Lid** close/open, **power button** (short press sleeps, ~2 s hold gives the shutdown dialog), **Fn keys**
+- **Wi-Fi** 802.11ac — 312 ↑ / 378 ↓ Mbit/s measured (needs HeliPort running; add it to Login Items)
+- **Bluetooth**, **audio** (see below), **battery**, **backlight**, **trackpad**
+- **Graphical boot picker** + startup chime
+- **0 ACPI errors at boot**
+- Battery: ~6.0 W idle with `lowpowermode`, ~3.3–3.7 h real use
+
+## What doesn't work
+
+- **Fingerprint sensor** — no macOS driver
+- **Touchscreen** — `VoodooI2CGoodix` fails to load (`Failed to load kext net.lazd.VoodooI2CGoodix`).
+  Pre-existing; it did not work under Clover either
+- **USB-keyboard wake from sleep** — by design. `SSDT-XPRW` forces `_PRW` wake-state to `0` for
+  **GPE 0x6D** (which carries `XHC.GPEH`) under Darwin, the standard fix for instant-wake.
+  ✅ **Lid open and the power button both wake the machine reliably** — only the keyboard doesn't.
+  Re-enabling USB wake risks reintroducing instant wake-from-sleep
+- **Battery charge limiting / Optimized Battery Charging** — impossible on this hardware. The EC
+  exposes no threshold to *any* OS: Linux has no `charge_control_end_threshold` either, there are no
+  `CH0B`/`CH0C`/`BCLM` SMC keys, and the BIOS has no such option
+- **HDMI out** — untested here; reported broken in the reference repo
+
+## Audio on Tahoe — requires a root patch
+
+**Apple removed `AppleHDA` in Tahoe beta 2.** AppleALC patches AppleHDA, so with nothing to patch
+there is no built-in audio at all. Restoring it needs Sequoia's `AppleHDA.kext` linked into the
+system kernel collection. Three walls make the obvious approaches fail:
+
+1. **Every installed macOS since Big Sur ships stripped kext bundles.** `/S/L/E/AppleHDA.kext` on a
+   running Sequoia Mac is ~408 KB with **no `Contents/MacOS`** — the code lives in the kernel
+   collections. Same for BaseSystem. Only a **KDK** ships unstripped kexts, so "install Sequoia to a
+   scratch volume and copy it" fails identically.
+2. **OpenCore cannot inject it.** AppleHDA's dependencies (`IOAudioFamily`, `IOGraphicsFamily`,
+   `IONDRVSupport`, `OSvKernDSPLib`, `vecLib`, `AppleSMBusController`) live in
+   `SystemKernelExtensions.kc` while OpenCore injects into `BootKernelExtensions.kc`, and it cannot
+   link across collections. `Kernel > Force` is not a fallback — the `/S/L/E` copies of those
+   dependencies are themselves stripped. Symptom: `Invalid Parameter` on `DspFuncLib`,
+   `AppleHDAController`, `AppleHDA`, `AppleMikeyDriver`.
+3. **`kmutil` refuses to rebuild without a KDK matching the running build.**
+
+### What works
+
+Take `AppleHDA.kext` from the **Sequoia 15.7.9 KDK** (x86_64, v600.2 — it includes `layout100`), then:
+
+```bash
+# Prerequisites: csr-active-config = 0x0803 in config.plist, and from Recovery:
+#   csrutil authenticated-root disable
+
+# the booted root is a sealed snapshot, so `mount -uw /` does NOT work - mount the live volume:
+sudo mount -o nobrowse -t apfs /dev/disk1s4 /System/Volumes/Update/mnt1
+
+sudo cp -R AppleHDA.kext /System/Volumes/Update/mnt1/System/Library/Extensions/
+sudo chown -R root:wheel /System/Volumes/Update/mnt1/System/Library/Extensions/AppleHDA.kext
+sudo chmod -R 755      /System/Volumes/Update/mnt1/System/Library/Extensions/AppleHDA.kext
+
+# kmutil wants a KDK matching the RUNNING build. Apple published 25G82 but never 25G83:
+sudo cp -R KDK_26.6.2_25G82.kdk KDK_26.6.2_25G83.kdk
+sudo plutil -replace ProductBuildVersion -string 25G83 \
+     KDK_26.6.2_25G83.kdk/System/Library/CoreServices/SystemVersion.plist
+
+sudo kmutil install --volume-root /System/Volumes/Update/mnt1 --update-all
+sudo bless --folder /System/Volumes/Update/mnt1/System/Library/CoreServices \
+     --bootefi --create-snapshot
+```
+
+`kmutil` failing for the *debug / research / development / kasan* collections is expected on a
+release system — only the **release** collections matter.
+
+### The cost — decide before you start
+
+- **Every macOS update reverts it.** Keep a copy of the kext; you will redo this.
+- The system volume ends up **unsealed** (`authenticated-root disabled`) — a real reduction in
+  integrity, not a formality.
+- To undo: remove the kext, `kmutil install` + `bless` again, then `csrutil authenticated-root enable`
+  from Recovery and set `csr-active-config` back to `0x67`.
+
 ## What's fixed here
 
 ### Three defects inherited from the reference config
@@ -63,12 +170,17 @@ makes a 2×2/80 MHz part program a PHY context the firmware can't execute
 
 ## BIOS: unlocking the hidden Advanced / Chipset menus
 
+> ⚠ **All offsets below are for BIOS version 0.29** (`P2MAX029`), which is what this machine runs
+> and what was patched. **Do not apply them blind to another BIOS version** — `AMITSE` is rebuilt
+> between releases and `0x32C2B` will point somewhere else. Re-derive them for your version:
+> extract `AMITSE`, find the `cmp r14b, 0xAA` that precedes the `0x2712`/`0x2713` FormId compares.
+
 GPD hides **Advanced** and **Chipset** behind a CMOS gate compiled into AMI's own
 setup browser (`AMITSE`), not behind the IFR. Full analysis in `bios/`.
 
 ### The safe way — one-shot, no reflash
 
-`AMITSE` reads CMOS upper-bank index `0x44` via ports `0x72`/`0x73`; if it isn't
+On BIOS 0.29, `AMITSE` reads CMOS upper-bank index `0x44` via ports `0x72`/`0x73`; if it isn't
 `0xAA` it skips FormIds `0x2712` (Advanced) and `0x2713` (Chipset), then writes
 `0xFF` back — so the unlock is **one-shot**. From OpenShell:
 
@@ -86,7 +198,7 @@ start here.
 
 ### The permanent way — patched BIOS ⚠ CAN BRICK YOUR MACHINE
 
-In `AMITSE` (GUID `B1DA0ADF-4F77-4070-A88E-BFFE1C60529A`), PE32 offset `0x32C2B`:
+In `AMITSE` (GUID `B1DA0ADF-4F77-4070-A88E-BFFE1C60529A`) **of BIOS 0.29**, PE32 offset `0x32C2B`:
 `0x74` (je) → `0xEB` (jmp), making the CMOS gate unconditional.
 
 > ⚠⚠ **Patch YOUR OWN DUMP — not the vendor image.** `P2MAX029.bin` (the image
