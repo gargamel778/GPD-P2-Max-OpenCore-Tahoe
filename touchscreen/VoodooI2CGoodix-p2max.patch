@@ -1,0 +1,253 @@
+diff --git a/VoodooI2CGoodix/Info.plist b/VoodooI2CGoodix/Info.plist
+index 2329416..f7f33c7 100644
+--- a/VoodooI2CGoodix/Info.plist
++++ b/VoodooI2CGoodix/Info.plist
+@@ -20,27 +20,49 @@
+ 	<string>0.4.0</string>
+ 	<key>IOKitPersonalities</key>
+ 	<dict>
+-		<key>Goodix Touch Screen</key>
++		<key>Goodix Touch Screen GDIX1001</key>
+ 		<dict>
+ 			<key>CFBundleIdentifier</key>
+ 			<string>net.lazd.VoodooI2CGoodix</string>
++			<key>GestureGainPercent</key>
++			<integer>100</integer>
+ 			<key>IOClass</key>
+ 			<string>VoodooI2CGoodixTouchDriver</string>
+ 			<key>IOProbeScore</key>
+ 			<integer>200</integer>
+ 			<key>IOPropertyMatch</key>
+-			<array>
+-				<dict>
+-					<key>name</key>
+-					<string>GDIX1001</string>
+-				</dict>
+-				<dict>
+-					<key>name</key>
+-					<string>GDIX1002</string>
+-				</dict>
+-			</array>
++			<dict>
++				<key>name</key>
++				<string>GDIX1001</string>
++			</dict>
+ 			<key>IOProviderClass</key>
+ 			<string>VoodooI2CDeviceNub</string>
++			<key>PhysicalSurfaceHeight</key>
++			<integer>12000</integer>
++			<key>PhysicalSurfaceWidth</key>
++			<integer>19200</integer>
++		</dict>
++		<key>Goodix Touch Screen GDIX1002</key>
++		<dict>
++			<key>CFBundleIdentifier</key>
++			<string>net.lazd.VoodooI2CGoodix</string>
++			<key>GestureGainPercent</key>
++			<integer>100</integer>
++			<key>IOClass</key>
++			<string>VoodooI2CGoodixTouchDriver</string>
++			<key>IOProbeScore</key>
++			<integer>200</integer>
++			<key>IOPropertyMatch</key>
++			<dict>
++				<key>name</key>
++				<string>GDIX1002</string>
++			</dict>
++			<key>IOProviderClass</key>
++			<string>VoodooI2CDeviceNub</string>
++			<key>PhysicalSurfaceHeight</key>
++			<integer>12000</integer>
++			<key>PhysicalSurfaceWidth</key>
++			<integer>19200</integer>
+ 		</dict>
+ 	</dict>
+ 	<key>NSHumanReadableCopyright</key>
+@@ -61,5 +83,6 @@
+ 		<string>13.0</string>
+ 	</dict>
+ 	<key>OSBundleRequired</key>
+-	<string>Root</string></dict>
++	<string>Root</string>
++</dict>
+ </plist>
+diff --git a/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.cpp b/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.cpp
+index 48d10fa..b67b16a 100644
+--- a/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.cpp
++++ b/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.cpp
+@@ -353,7 +353,9 @@ void VoodooI2CGoodixEventDriver::reportTouches(struct Touch touches[], int numTo
+ 
+     if (activeFramebuffer) {
+         OSNumber* number = OSDynamicCast(OSNumber, activeFramebuffer->getProperty(kIOFBTransformKey));
+-        currentRotation = number->unsigned8BitValue() / 0x10;
++        if (number) {
++            currentRotation = number->unsigned8BitValue() / 0x10;
++        }
+     }
+ 
+     if (numTouches == 1) {
+@@ -470,12 +472,13 @@ multitouch_exit:
+     return kIOReturnError;
+ }
+ 
+-void VoodooI2CGoodixEventDriver::configureMultitouchInterface(int logicalMaxX, int logicalMaxY, int numTransducers, UInt32 vendorId) {
++void VoodooI2CGoodixEventDriver::configureMultitouchInterface(int logicalMaxX, int logicalMaxY, UInt32 physicalMaxX, UInt32 physicalMaxY, int numTransducers, UInt32 vendorId) {
+     if (multitouch_interface) {
+-        IOLog("%s::Configuring multitouch interface with dimensions %d,%d and %d transducers\n", getName(), logicalMaxX, logicalMaxY, numTransducers + 1);
++        IOLog("%s::Configuring multitouch interface: logical %d,%d  physical %u,%u (0.01mm)  %d transducers\n",
++              getName(), logicalMaxX, logicalMaxY, physicalMaxX, physicalMaxY, numTransducers + 1);
+ 
+-        multitouch_interface->physical_max_x = logicalMaxX;
+-        multitouch_interface->physical_max_y = logicalMaxY;
++        multitouch_interface->physical_max_x = physicalMaxX;
++        multitouch_interface->physical_max_y = physicalMaxY;
+         multitouch_interface->logical_max_x = logicalMaxX;
+         multitouch_interface->logical_max_y = logicalMaxY;
+ 
+@@ -562,7 +565,8 @@ IOFramebuffer* VoodooI2CGoodixEventDriver::getFramebuffer() {
+         if (display) {
+             IOLog("%s::Got active display\n", getName());
+ 
+-            IORegistryEntry *entry = display->getParentEntry(gIOServicePlane)->getParentEntry(gIOServicePlane);
++            IORegistryEntry *parent = display->getParentEntry(gIOServicePlane);
++            IORegistryEntry *entry = parent ? parent->getParentEntry(gIOServicePlane) : NULL;
+             if (entry)
+                 framebuffer = reinterpret_cast<IOFramebuffer*>(entry->metaCast("IOFramebuffer"));
+ 
+diff --git a/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.hpp b/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.hpp
+index 2908bb1..32da68e 100644
+--- a/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.hpp
++++ b/VoodooI2CGoodix/VoodooI2CGoodixEventDriver.hpp
+@@ -21,7 +21,8 @@
+ #include <IOKit/IOWorkLoop.h>
+ #include <IOKit/IOTimerEventSource.h>
+ 
+-#include <IOKit/hidevent/IOHIDEventService.h>
++#include <IOKit/hid/IOHIDDevice.h>
++#include <IOKit/hid/IOHIDEventService.h>
+ #include <IOKit/hidsystem/IOHIDTypes.h>
+ 
+ #include <IOKit/graphics/IOFramebuffer.h>
+@@ -118,7 +119,7 @@ class EXPORT VoodooI2CGoodixEventDriver : public IOHIDEventService {
+      * @vendorId The vendor ID of the touchscreen
+      */
+ 
+-    void configureMultitouchInterface(int logicalMaxX, int logicalMaxY, int numTransducers, UInt32 vendorId);
++    void configureMultitouchInterface(int logicalMaxX, int logicalMaxY, UInt32 physicalMaxX, UInt32 physicalMaxY, int numTransducers, UInt32 vendorId);
+ 
+  protected:
+     VoodooI2CMultitouchInterface* multitouch_interface;
+diff --git a/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.cpp b/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.cpp
+index 3a292fb..3f55a11 100644
+--- a/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.cpp
++++ b/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.cpp
+@@ -212,7 +212,38 @@ bool VoodooI2CGoodixTouchDriver::start(IOService* provider) {
+         goto start_exit;
+     }
+ 
+-    event_driver->configureMultitouchInterface(ts->abs_x_max, ts->abs_y_max, GOODIX_MAX_CONTACTS, GOODIX_VENDOR_ID);
++    // Scoped so the earlier `goto start_exit` statements do not jump over these
++    // initialisations (C++ forbids that).
++    {
++    // Physical surface size in 0.01mm units, with an optional gain trim. Both are
++    // overridable from the kext personality, so gesture speed can be retuned by editing
++    // the deployed Info.plist and rebooting - no rebuild.
++    UInt32 phys_x = GOODIX_PHYSICAL_MAX_X;
++    UInt32 phys_y = GOODIX_PHYSICAL_MAX_Y;
++    UInt32 gain = GOODIX_GESTURE_GAIN_DEFAULT;
++    OSNumber* tune;
++    if ((tune = OSDynamicCast(OSNumber, getProperty("PhysicalSurfaceWidth"))))
++        phys_x = tune->unsigned32BitValue();
++    if ((tune = OSDynamicCast(OSNumber, getProperty("PhysicalSurfaceHeight"))))
++        phys_y = tune->unsigned32BitValue();
++    if ((tune = OSDynamicCast(OSNumber, getProperty("GestureGainPercent"))))
++        gain = tune->unsigned32BitValue();
++
++    if (gain < GOODIX_GESTURE_GAIN_MIN) gain = GOODIX_GESTURE_GAIN_MIN;
++    if (gain > GOODIX_GESTURE_GAIN_MAX) gain = GOODIX_GESTURE_GAIN_MAX;
++
++    phys_x = (UInt32)(((UInt64)phys_x * gain) / 100);
++    phys_y = (UInt32)(((UInt64)phys_y * gain) / 100);
++    if (phys_x > GOODIX_PHYSICAL_MAX_LIMIT) phys_x = GOODIX_PHYSICAL_MAX_LIMIT;
++    if (phys_y > GOODIX_PHYSICAL_MAX_LIMIT) phys_y = GOODIX_PHYSICAL_MAX_LIMIT;
++
++    // Readable via: ioreg -c VoodooI2CGoodixTouchDriver -r -d1
++    setProperty("GoodixGestureGainPercent", (unsigned long long)gain, 32);
++    setProperty("GoodixSurfaceWidth_hundredths_mm", (unsigned long long)phys_x, 32);
++    setProperty("GoodixSurfaceHeight_hundredths_mm", (unsigned long long)phys_y, 32);
++
++    event_driver->configureMultitouchInterface(ts->abs_x_max, ts->abs_y_max, phys_x, phys_y, GOODIX_MAX_CONTACTS, GOODIX_VENDOR_ID);
++    }
+     event_driver->registerService();
+ 
+     registerService();
+@@ -224,6 +255,12 @@ start_exit:
+ }
+ 
+ void VoodooI2CGoodixTouchDriver::interrupt_occurred(OSObject* owner, IOInterruptEventSource* src, int intCount) {
++    // Verification aid: running touch-interrupt count, readable via
++    //   ioreg -c VoodooI2CDeviceNub -r -d1 | grep GoodixInterrupts
++    if (api) {
++        goodix_irq_count++;
++        api->setProperty("GoodixInterrupts", (unsigned long long)goodix_irq_count, 64);
++    }
+     if (read_in_progress || !awake) {
+         return;
+     }
+@@ -473,7 +510,12 @@ IOReturn VoodooI2CGoodixTouchDriver::goodix_read_version() {
+     char id_str[5];
+ 
+     // AtmelMTX method
+-    retVal = goodix_read_reg(GOODIX_REG_ID, buf, sizeof(buf));
++    for (int attempt = 0; attempt < 12; attempt++) {
++        memset(buf, 0, sizeof(buf));
++        retVal = goodix_read_reg(GOODIX_REG_ID, buf, sizeof(buf));
++        if (retVal == kIOReturnSuccess) break;
++        IOSleep(50);
++    }
+     if (retVal != kIOReturnSuccess) {
+         IOLog("%s::Read version failed: %d\n", getName(), retVal);
+         return retVal;
+diff --git a/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.hpp b/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.hpp
+index 031df44..a786114 100644
+--- a/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.hpp
++++ b/VoodooI2CGoodix/VoodooI2CGoodixTouchDriver.hpp
+@@ -77,6 +77,7 @@ private:
+      * @return true if the device was initialised properly
+      */
+     bool init_device();
++    UInt64 goodix_irq_count = 0;
+ 
+     /* Releases any allocated resources (called by stop)
+      *
+diff --git a/VoodooI2CGoodix/goodix.h b/VoodooI2CGoodix/goodix.h
+index 93b7cbc..b86aa65 100644
+--- a/VoodooI2CGoodix/goodix.h
++++ b/VoodooI2CGoodix/goodix.h
+@@ -3,6 +3,26 @@
+ 
+ #define GOODIX_VENDOR_ID    0x0416
+ 
++/* Physical active area of the digitiser, in 0.01 mm units.
++ * NOTE: this is a PHYSICAL DIMENSION, not a coordinate count. VoodooInput packs it
++ * verbatim into the MT2 "Sensor Surface Description" feature report (0xD9/0xDB), where
++ * macOS reads it as hundredths of a millimetre and uses it to turn normalised finger
++ * travel into millimetres for scroll and pinch magnitude. Assigning the coordinate
++ * range here (as this driver used to) makes macOS believe it is driving a 25.6 x 16.0 mm
++ * trackpad, which under-scales every relative gesture.
++ * GPD P2 MAX: 8.9" 2560x1600 16:10, EDID image size 192 x 120 mm. */
++#define GOODIX_PHYSICAL_MAX_X       19200   /* 192.00 mm */
++#define GOODIX_PHYSICAL_MAX_Y       12000   /* 120.00 mm */
++
++/* Gesture magnitude trim, percent of the physical size above.
++ * 100 = physically honest. Higher = faster scroll/pinch. Overridable at runtime via the
++ * GestureGainPercent key in the kext personality (no rebuild needed). */
++#define GOODIX_GESTURE_GAIN_DEFAULT 100
++#define GOODIX_GESTURE_GAIN_MIN     10
++#define GOODIX_GESTURE_GAIN_MAX     300
++/* 16-bit field in feature report 0xD9; overflowing it silently wraps to a tiny surface. */
++#define GOODIX_PHYSICAL_MAX_LIMIT   65535
++
+ #define GOODIX_READ_COOR_ADDR           0x814E
+ #define GOODIX_GT1X_REG_CONFIG_DATA     0x8050
+ #define GOODIX_GT9X_REG_CONFIG_DATA     0x8047
