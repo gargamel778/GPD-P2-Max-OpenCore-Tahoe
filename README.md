@@ -167,7 +167,7 @@ replaces it must be gated identically.**
 | `ACPI/SSDT-LIDFIX.dsl` | makes the lid work — see `docs/LID-GPE50.md` |
 | `ACPI/SSDT-BATSTA.dsl` | `ECAV`-guards `BAT0._STA`; takes boot ACPI errors from 18 to **0** |
 | `itlwm-patch/` | itlwm VHT-width clamp + **prebuilt kext** — upstream [OpenIntelWireless/itlwm#1067](https://github.com/OpenIntelWireless/itlwm/pull/1067) |
-| `touchscreen/` | Goodix GT928 fix — root cause, patch, and gesture tunables |
+| `touchscreen/` | Goodix GT928 fix — root cause, patch, gesture tunables, and **prebuilt kexts** |
 | `picker/` | OpenCanopy assets and a macOS volume icon |
 
 **Lid** — the lid is an EC query. `_Q0C` reads `LSTE`, then calls `^^^GFX0.GLID(LIDS)`

@@ -119,6 +119,13 @@ it climbs.** Full stack when healthy:
 - A failing `IOPropertyMatch` logs **nothing**; a matched-but-unallocatable class logs
   `Couldn't alloc class`; a failing `init()` is **silent**. Know which silence you have.
 
+## Prebuilt kexts
+
+[`prebuilt/`](prebuilt/) has both kexts built from the sources and commits named above,
+stripped of the debug map, with licences and checksums. They are the exact binaries running
+on the machine. Neither project publishes a release that works here, so building — or taking
+these — is the only route.
+
 ## Gesture speed — `physical_max_*` was in the wrong units
 
 Once touch worked, scroll and pinch were ~7.5x too weak while tracking and rotate were
