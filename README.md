@@ -27,9 +27,24 @@ Tahoe, plus three defects found along the way.
 | AppleALC | 1.9.7 | | BrightnessKeys | 1.0.3 |
 | NVMeFix | 1.1.3 | | AMFIPass | 1.4.1 |
 | RTCMemoryFixup | 1.0.7 | | NullEthernet (+`SSDT-RMNE`) | 1.0.6 |
-| HibernationFixup | 1.5.4 | | VoodooI2C (+HID, Goodix, Input, GPIO) | 2.8 |
+| HibernationFixup | 1.5.4 | | **VoodooI2C** (+HID, Input, GPIO) | **2.9.1** ⚠ |
 | SystemProfilerMemoryFixup | 1.0.0 | | **itlwm-Tahoe (patched)** | **2.4.0** |
 | IntelBluetoothFirmware / Injector | **2.5.1** | | BlueToolFixup | 2.7.2 |
+| **VoodooI2CGoodix** (touchscreen) | `master` @ `df42eb3` ⚠ | | | |
+
+⚠ **VoodooI2C and VoodooI2CGoodix must both be built from source** — see
+[`touchscreen/`](touchscreen/). Neither project has a release that works here, and using the
+released binaries gets you a dead touchscreen no matter what else is correct:
+
+- **Every** published `VoodooI2CGoodix` release — 0.3.1 (2020) *and* 0.4.0 (2023) — declares
+  `com.apple.iokit.IOGraphicsFamily` and **cannot load under OpenCore at all**. The fix is
+  commit [`df42eb3`](https://github.com/lazd/VoodooI2CGoodix/commit/df42eb3) (2024-08-21),
+  which landed **after** the 0.4.0 tag and has never been released.
+  ⚠ **The version number will not tell you which build you have** — a source build from
+  `master` also reports `CFBundleVersion 0.4.0`. Check the kext instead:
+  `/usr/libexec/PlistBuddy -c "Print :OSBundleLibraries" VoodooI2CGoodix.kext/Contents/Info.plist`
+  — if `IOGraphicsFamily` appears, that build cannot load.
+- **VoodooI2C 2.8 cannot drive this machine's I²C bus.** 2.9.1 can, and has no release either.
 
 ⚠ **IntelBluetoothFirmware must be 2.5.1+** — upstream 2.4.0 hard-codes `KernelVersion::Sequoia`
 as its maximum, loads on Tahoe and deliberately does nothing. Use the
@@ -50,6 +65,8 @@ kernel-gated to ≤24.9.9. **They do not work on Tahoe** — AirportItlwm binds 
 - **Lid** close/open, **power button** (short press sleeps, ~2 s hold gives the shutdown dialog), **Fn keys**
 - **Wi-Fi** 802.11ac — 312 ↑ / 378 ↓ Mbit/s measured (needs HeliPort running; add it to Login Items)
 - **Bluetooth**, **audio** (see below), **battery**, **backlight**, **trackpad**
+- **Touchscreen** — Goodix GT928, full multitouch: drag, two-finger scroll, pinch-to-zoom,
+  rotate, accurate tracking across the panel (see [`touchscreen/`](touchscreen/))
 - **Graphical boot picker** + startup chime
 - **0 ACPI errors at boot**
 - Battery: ~6.0 W idle with `lowpowermode`, ~3.3–3.7 h real use
@@ -57,8 +74,6 @@ kernel-gated to ≤24.9.9. **They do not work on Tahoe** — AirportItlwm binds 
 ## What doesn't work
 
 - **Fingerprint sensor** — no macOS driver
-- **Touchscreen** — `VoodooI2CGoodix` fails to load (`Failed to load kext net.lazd.VoodooI2CGoodix`).
-  Pre-existing; it did not work under Clover either
 - **USB-keyboard wake from sleep** — by design. `SSDT-XPRW` forces `_PRW` wake-state to `0` for
   **GPE 0x6D** (which carries `XHC.GPEH`) under Darwin, the standard fix for instant-wake.
   ✅ **Lid open and the power button both wake the machine reliably** — only the keyboard doesn't.
@@ -152,6 +167,7 @@ replaces it must be gated identically.**
 | `ACPI/SSDT-LIDFIX.dsl` | makes the lid work — see `docs/LID-GPE50.md` |
 | `ACPI/SSDT-BATSTA.dsl` | `ECAV`-guards `BAT0._STA`; takes boot ACPI errors from 18 to **0** |
 | `itlwm-patch/` | itlwm VHT-width clamp + **prebuilt kext** — upstream [OpenIntelWireless/itlwm#1067](https://github.com/OpenIntelWireless/itlwm/pull/1067) |
+| `touchscreen/` | Goodix GT928 fix — root cause, patch, and gesture tunables |
 | `picker/` | OpenCanopy assets and a macOS volume icon |
 
 **Lid** — the lid is an EC query. `_Q0C` reads `LSTE`, then calls `^^^GFX0.GLID(LIDS)`
@@ -167,6 +183,36 @@ And itlwm's `ieee80211_vht_negotiate()` takes the channel width from the AP's
 advertised capability without intersecting it with the card's own, so a 160 MHz AP
 makes a 2×2/80 MHz part program a PHY context the firmware can't execute
 (`ADVANCED_SYSASSERT`). See `docs/WIFI-VTD.md`.
+
+**Touchscreen** — two independent faults, in series, each fatal on its own; neither project
+ships a release containing its own fix.
+
+1. **The kext never loaded.** `VoodooI2CGoodix` 0.3.1 declares an `OSBundleLibraries`
+   dependency on `com.apple.iokit.IOGraphicsFamily`, which lives in
+   `SystemKernelExtensions.kc`. An OpenCore-injected kext lands in
+   `BootKernelExtensions.kc` and cannot link across — the same wall AppleHDA hits — so it
+   fails with `0xdc00800e` on every boot. Upstream fixed this in
+   [`df42eb3`](https://github.com/lazd/VoodooI2CGoodix/commit/df42eb3) (2024-08-21), which
+   landed *after* the newest tag (v0.4.0, 2023-03-22) — **so no released build contains it**,
+   and the 0.4.0 release is just as dead as 0.3.1. Build from `master`.
+2. **VoodooI2C 2.8 could not talk to the chip.** With the kext finally loading, the driver
+   bound, probed and started correctly, then failed in `init_device()`: `goodix_read_reg`
+   returned `kIOReturnError` with an all-zero buffer, on every one of 12 retries across
+   600 ms, while `_PS0` returned success. **Upgrading VoodooI2C to 2.9.1 fixed it
+   outright** — the chip answered on the first attempt with id `928`, version `0x1060`.
+
+A third fault made every gesture ~7.5× too weak while leaving tracking and rotate perfect:
+the driver assigned the *coordinate range* to `physical_max_*`, whose contract is
+**0.01 mm**. macOS therefore believed the panel was 25.6 × 16.0 mm rather than 192 × 120 mm.
+Scroll and pinch speed is now tunable from the kext's `Info.plist` without a rebuild.
+Full writeup, arithmetic and patch in [`touchscreen/`](touchscreen/).
+
+⚠ Also fixed there: **two null-dereferences that panic the kernel on touch**. And if you
+maintain a VoodooI2C satellite, the `physical_max_*` unit confusion is not unique to Goodix —
+`VoodooI2CAtmelMXT` assigns `max_report_x` to it, and `VoodooI2CFTE` does the same with the
+correct conversion sitting *commented out* on the very same line. `VoodooI2CELAN`
+(`max_report_x * 100 / hw_res_x`), `VoodooI2CSynaptics` (`x_size_mm * 100`) and
+`VoodooI2CHID` (parses the HID physical-max descriptor) all get it right.
 
 ## BIOS: unlocking the hidden Advanced / Chipset menus
 
@@ -251,11 +297,11 @@ per the steps above.
 
 Working: sleep/wake (incl. on battery), lid, power button, Fn keys, Wi-Fi 802.11ac
 (312↑/378↓ Mbit/s measured), audio, battery, graphical picker + boot chime,
-**0 ACPI errors at boot**.
+**touchscreen with full multitouch**, **0 ACPI errors at boot**.
 
-Not working / not possible: charge limiting (the EC exposes no threshold to *any* OS —
-Linux has no `charge_control_end_threshold` either), USB-keyboard wake (disabled by
-design in `SSDT-XPRW` to prevent instant-wake).
+Not working / not possible: fingerprint sensor (no macOS driver), charge limiting (the EC
+exposes no threshold to *any* OS — Linux has no `charge_control_end_threshold` either),
+USB-keyboard wake (disabled by design in `SSDT-XPRW` to prevent instant-wake).
 
 ## Credits
 
