@@ -68,8 +68,11 @@ actually been exercised here before — the touchscreen was its only consumer.
 | `VoodooI2CGoodix.kext` | 0.3.1 (release) | **`master` @ `df42eb3`** (also reports 0.4.0) | `lazd/VoodooI2CGoodix` + patch below |
 | `VoodooI2C.kext` (+ PlugIns) | 2.8 | **2.9.1** | `VoodooI2C/VoodooI2C` @ `5c0c99c`, stock |
 
-Old copies are kept on the ESP as `VoodooI2CGoodix.kext.v031-BROKEN` and
-`VoodooI2C.kext.v28-bak`. No `config.plist` change was needed — the Goodix entry was
+Old copies are archived in this repo at `opencore/kexts-retired/` rather than left on the ESP —
+`esp-kext-backups.tgz` (the 0.3.1 build that cannot load, and VoodooI2C 2.8) and
+`Kexts-I2C-backup.tgz` (the complete pre-fix I²C stack: VoodooI2C 2.8 + VoodooGPIO 1.1 +
+VoodooI2CServices 1 + VoodooInput 1.1.4). Those are the experimental controls behind the
+"2.8 cannot drive this bus" finding, so they are kept deliberately. No `config.plist` change was needed — the Goodix entry was
 already present and enabled, and the VoodooI2C PlugIns paths are unchanged.
 
 ## Local patch — `VoodooI2CGoodix-p2max.patch`
