@@ -53,7 +53,15 @@ they are deliberately absent and this EFI will not boot as shipped without them.
 |---|---|
 | `IOSkywalkFamily.kext` | `com.apple.iokit.IOSkywalkFamily` — "Copyright © 2022 Apple Inc." |
 | `IO80211FamilyLegacy.kext` | `com.apple.iokit.IO80211FamilyLegacy` — extracted from macOS 12/13 |
-| `AppleHDA.kext` | `com.apple.driver.AppleHDA` — "Copyright © 2000-2019 Apple Inc." |
+| `AppleHDA.kext` | `com.apple.driver.AppleHDA` — "Copyright © 2000-2019 Apple Inc." Stock and Apple-signed; it is **not** modified (see below). |
+
+⚠ **`AppleHDA` does not come from your running macOS.** Tahoe removed it, and every installed macOS
+since Big Sur ships stripped kext bundles with no `Contents/MacOS`. It has to be extracted from a
+**Sequoia 15.7.x Kernel Debug Kit**, and a *second* KDK matching your running build is required before
+`kmutil` will relink the collections. Both are downloaded from Apple under your own developer account
+(or the third-party [KdkSupportPkg](https://github.com/dortania/KdkSupportPkg/releases) mirror).
+The bundle is bit-identical stock Apple — "root patch" refers to patching the root **volume**, not the
+kext — which is precisely why it cannot be redistributed here.
 
 The `IO80211` **userland root patch** the Wi-Fi setup depends on is likewise Apple's
 `IO80211.framework` from 13.7.2 and is not distributed here.
