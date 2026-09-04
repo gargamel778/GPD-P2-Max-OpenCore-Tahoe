@@ -60,8 +60,7 @@ since Big Sur ships stripped kext bundles with no `Contents/MacOS`. It has to be
 **Sequoia 15.7.x Kernel Debug Kit**, and a *second* KDK matching your running build is required before
 `kmutil` will relink the collections. Both are downloaded from Apple under your own developer account
 Community mirrors that avoid the Apple
-login exist, but are not linked here — they redistribute Apple binaries, and that is their risk to
-take rather than something this repository will route you to.
+login exist, but are not linked here.
 The bundle is bit-identical stock Apple — "root patch" refers to patching the root **volume**, not the
 kext — which is precisely why it cannot be redistributed here.
 
