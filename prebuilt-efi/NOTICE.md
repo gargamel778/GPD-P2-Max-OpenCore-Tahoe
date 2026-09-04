@@ -59,7 +59,9 @@ they are deliberately absent and this EFI will not boot as shipped without them.
 since Big Sur ships stripped kext bundles with no `Contents/MacOS`. It has to be extracted from a
 **Sequoia 15.7.x Kernel Debug Kit**, and a *second* KDK matching your running build is required before
 `kmutil` will relink the collections. Both are downloaded from Apple under your own developer account
-(or the third-party [KdkSupportPkg](https://github.com/dortania/KdkSupportPkg/releases) mirror).
+Community mirrors that avoid the Apple
+login exist, but are not linked here — they redistribute Apple binaries, and that is their risk to
+take rather than something this repository will route you to.
 The bundle is bit-identical stock Apple — "root patch" refers to patching the root **volume**, not the
 kext — which is precisely why it cannot be redistributed here.
 

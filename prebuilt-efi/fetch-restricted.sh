@@ -35,7 +35,8 @@ echo "         kmutil will relink the kernel collections"
 echo
 echo "    Download them yourself from Apple (developer account required):"
 echo "      https://developer.apple.com/download/all/?q=Kernel%20Debug%20Kit"
-echo "    Third-party mirror, no Apple login: https://github.com/dortania/KdkSupportPkg/releases"
+echo "    Community mirrors of KDKs exist that do not need an Apple login; this repository"
+echo "    does not link to them — they redistribute Apple binaries, which is their risk to take."
 echo
 echo "    The kext is stock, Apple-signed and UNMODIFIED — \"root patch\" refers to patching the"
 echo "    root VOLUME, not the kext. It is Apple-copyrighted and is not redistributed here."
