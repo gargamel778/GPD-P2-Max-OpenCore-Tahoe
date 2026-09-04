@@ -50,9 +50,18 @@ released binaries gets you a dead touchscreen no matter what else is correct:
 as its maximum, loads on Tahoe and deliberately does nothing. Use the
 [lshbluesky fork](https://github.com/lshbluesky/IntelBluetoothFirmware) until upstream ships one.
 
-`AirportItlwm` 2.3.0 (BigSur→Sequoia) and `IOSkywalkFamily`/`IO80211FamilyLegacy` are present but
-kernel-gated to ≤24.9.9. **They do not work on Tahoe** — AirportItlwm binds but every scan returns
-`Apple80211Scan err[22] EINVAL`. Tahoe uses `itlwm` + [HeliPort](https://github.com/OpenIntelWireless/HeliPort).
+`AirportItlwm` **does work on Tahoe**, with an `IO80211` userland root patch. Tahoe ships no userland
+`IO80211`, so on an unpatched system every scan returns `Apple80211Scan err[22] EINVAL` — that is the
+missing userland, not an incompatible kext: the driver binds and scans correctly. Installing the 13.7.2
+`IO80211` framework plus an `IO80211Old.dylib` re-export shim, with `-amfipassbeta` in boot-args, gives
+native Wi-Fi with a real menu-bar item and no HeliPort. The 7265 additionally needs a VHT-width clamp in
+`itlwm` ([#1067](https://github.com/OpenIntelWireless/itlwm/pull/1067)), or the firmware hits
+`ADVANCED_SYSASSERT` under sustained load.
+
+⚠ The root patch requires `csrutil authenticated-root disable`, so the system volume is left unsealed
+and **every macOS update reverts it** — the same trade-off as the audio root patch below. `itlwm` +
+[HeliPort](https://github.com/OpenIntelWireless/HeliPort) remains a perfectly valid choice if you would
+rather keep the volume sealed.
 
 **UEFI drivers:** OpenRuntime, OpenHfsPlus, ResetNvramEntry, OpenCanopy, AudioDxe
 
@@ -63,7 +72,8 @@ kernel-gated to ≤24.9.9. **They do not work on Tahoe** — AirportItlwm binds 
 
 - **Sleep / wake** — including idle sleep on battery and RTC wake
 - **Lid** close/open, **power button** (short press sleeps, ~2 s hold gives the shutdown dialog), **Fn keys**
-- **Wi-Fi** 802.11ac — 312 ↑ / 378 ↓ Mbit/s measured (needs HeliPort running; add it to Login Items)
+- **Wi-Fi** 802.11ac — **280-314 ↑ / 370-485 ↓ Mbit/s** measured with AirportItlwm + the `IO80211`
+  root patch (native, menu-bar item, no HeliPort); or 312 ↑ / 378 ↓ with `itlwm` + HeliPort
 - **Bluetooth**, **audio** (see below), **battery**, **backlight**, **trackpad**
 - **Touchscreen** — Goodix GT928, full multitouch: drag, two-finger scroll, pinch-to-zoom,
   rotate, accurate tracking across the panel (see [`touchscreen/`](touchscreen/))
